@@ -1,4 +1,4 @@
-# hardhat-change-network
+# Hardhat Change Network
 
 Allows changing the current network in Hardhat.
 
@@ -30,10 +30,4 @@ Change the network to any network defined in hardhat.config.js with this simple 
 
 ```javascript
 hre.changeNetwork('goerli');
-```
-
-You can also use this library to retrieve a standard web3 provider object for a given network:
-
-```javascript
-const provider = hre.getProvider('goerli');
 ```
