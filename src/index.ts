@@ -1,49 +1,63 @@
-import { extendConfig, extendEnvironment } from "hardhat/config";
-import { lazyObject } from "hardhat/plugins";
-import { HardhatConfig, HardhatUserConfig } from "hardhat/types";
-import path from "path";
+/**
+ * @author misicnenad
+ * @copyright
+ * @license MIT
+ */
 
-import { ExampleHardhatRuntimeEnvironmentField } from "./ExampleHardhatRuntimeEnvironmentField";
+import { extendEnvironment } from "hardhat/config";
+import { createProvider } from "hardhat/internal/core/providers/construction";
+import { lazyFunction } from "hardhat/plugins";
+
 // This import is needed to let the TypeScript compiler know that it should include your type
 // extensions in your npm package's types file.
+import type { EthereumProvider } from "hardhat/types";
 import "./type-extensions";
 
-extendConfig(
-  (config: HardhatConfig, userConfig: Readonly<HardhatUserConfig>) => {
-    // We apply our default config here. Any other kind of config resolution
-    // or normalization should be placed here.
-    //
-    // `config` is the resolved config, which will be used during runtime and
-    // you should modify.
-    // `userConfig` is the config as provided by the user. You should not modify
-    // it.
-    //
-    // If you extended the `HardhatConfig` type, you need to make sure that
-    // executing this function ensures that the `config` object is in a valid
-    // state for its type, including its extensions. For example, you may
-    // need to apply a default value, like in this example.
-    const userPath = userConfig.paths?.newPath;
+extendEnvironment((hre) => {
+  // Cache HRE providers
+  const providers: { [name: string]: EthereumProvider } = {
+    [hre.network.name]: hre.network.provider,
+  };
 
-    let newPath: string;
-    if (userPath === undefined) {
-      newPath = path.join(config.paths.root, "newPath");
-    } else {
-      if (path.isAbsolute(userPath)) {
-        newPath = userPath;
-      } else {
-        // We resolve relative paths starting from the project's root.
-        // Please keep this convention to avoid confusion.
-        newPath = path.normalize(path.join(config.paths.root, userPath));
-      }
+  async function getProvider(networkName: string): Promise<EthereumProvider> {
+    // check if network config is even set
+    if (!hre.config.networks[networkName]) {
+      throw new Error(`changeNetwork: Couldn't find network '${networkName}'`);
     }
 
-    config.paths.newPath = newPath;
+    if (!providers[networkName]) {
+      providers[networkName] = createProvider(
+        networkName,
+        hre.config.networks[networkName],
+        undefined,
+        hre.artifacts
+      );
+    }
+    return providers[networkName];
   }
-);
 
-extendEnvironment((hre) => {
-  // We add a field to the Hardhat Runtime Environment here.
-  // We use lazyObject to avoid initializing things until they are actually
-  // needed.
-  hre.example = lazyObject(() => new ExampleHardhatRuntimeEnvironmentField());
+  // use lazyFunction to avoid initializing things until they are actually needed
+  hre.changeNetwork = lazyFunction(() => async (networkName) => {
+    const toProvider = await getProvider(networkName);
+
+    // update hardhat's network data
+    hre.network.name = networkName;
+    hre.network.config = hre.config.networks[networkName];
+    hre.network.provider = toProvider;
+
+    // update underlying library's provider data
+    if ("ethers" in hre) {
+      const { HardhatEthersProvider } = await import(
+        // @ts-ignore
+        "@nomicfoundation/hardhat-ethers/internal/hardhat-ethers-provider"
+      );
+      // @ts-ignore
+      hre.ethers.provider = new HardhatEthersProvider(toProvider, networkName);
+    }
+    if ("web3" in hre) {
+      // @ts-ignore
+      const Web3 = await import("web3");
+      hre.web3 = new Web3(toProvider);
+    }
+  });
 });
