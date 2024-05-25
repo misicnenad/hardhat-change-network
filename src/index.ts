@@ -56,8 +56,10 @@ extendEnvironment((hre) => {
     }
     if ("web3" in hre) {
       // @ts-ignore
-      const Web3 = await import("web3");
-      hre.web3 = new Web3(toProvider);
+      const { Web3 } = await import("web3");
+      // need to cast 'as any' due to a weird bug when running tests
+      // where mocha treats just this `hre` type as `never`
+      (hre as any).web3 = new Web3(toProvider);
     }
   });
 });
